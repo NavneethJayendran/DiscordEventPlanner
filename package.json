@@ -7,20 +7,36 @@
   "license": "MIT",
   "dependencies": {
     "@typeit/discord": "^4.0.10",
+    "@types/argparse": "^2.0.8",
+    "@types/humanize-duration": "^3.25.0",
     "@types/node": "^15.6.0",
+    "@types/shell-quote": "^1.7.0",
     "@types/uuid": "^8.3.0",
+    "argparse": "^2.0.1",
+    "chrono-node": "^2.2.6",
+    "class-transformer": "^0.4.0",
     "discord.js": "^12.5.3",
     "dotenv": "^10.0.0",
+    "humanize-duration": "^3.26.0",
+    "reflect-metadata": "^0.1.13",
+    "shell-quote": "^1.7.2",
     "ts-node": "^10.0.0",
     "tsc-watch": "^4.2.9",
-    "typescript": "^4.2.4",
-    "uuid": "^8.3.2"
+    "typescript": "^4.2.4"
   },
   "scripts": {
-    "build:dev": "tsc && cp .env build/.env",
-    "start:dev": "yarn build:dev && tsc-watch --onSuccess \"node build/main.js\""
+    "dbinit:dev": "mkdir -p build/db && (cp -n db/events.json build/db/events.json || true)",
+    "build:dev": "yarn run dbinit:dev && tsc && cp .env build/.env",
+    "start:dev": "yarn build:dev && tsc-watch --onSuccess \"node build/main.js\"",
+    "clean": "rm -rf build"
   },
   "devDependencies": {
-    "eslint": "^7.27.0"
+    "@typescript-eslint/eslint-plugin": "^4.24.0",
+    "@typescript-eslint/parser": "^4.24.0",
+    "eslint": "^7.12.1",
+    "eslint-config-standard": "^16.0.2",
+    "eslint-plugin-import": "^2.22.1",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^4.2.1"
   }
 }

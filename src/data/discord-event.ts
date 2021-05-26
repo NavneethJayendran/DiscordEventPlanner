@@ -1,45 +1,51 @@
+import { Type } from 'class-transformer';
+
+
 export default class DiscordEvent {
     id: string;
-    creator_id: string;
+    creatorId: string;
     name: string;
     description: string;
-    start_time: Date;
+    @Type(() => Date)
+    startTime: Date;
     attending: string[];
     skipping: string[];
+    channelId: string;
 
-    constructor(id: string, name: string, description: string, start_time: Date, creator_id: string) {
-        this.id = id;
-        this.name = name;
-        this.description = description;
-        this.creator_id = creator_id;
-        this.attending = [creator_id];
-	this.skipping = [];
-        this.start_time = start_time;
+    constructor (id: string, name: string, description: string, startTime: Date, creatorId: string, channelId: string) {
+      this.id = id
+      this.name = name
+      this.description = description
+      this.creatorId = creatorId
+      this.attending = [creatorId]
+      this.skipping = []
+      this.startTime = startTime
+      this.channelId = channelId
     }
 
-    add_attendee(discord_id: string) {
-	this.add_to_set(this.attending, discord_id);
-	this.remove_from_set(this.skipping, discord_id);
+    addAttendee (discordId: string) {
+      this.addToSet(this.attending, discordId)
+      this.removeFromSet(this.skipping, discordId)
     }
 
-    remove_attendee(discord_id: string) {
-	this.add_to_set(this.skipping, discord_id);
-	this.remove_from_set(this.attending, discord_id);
+    removeAttendee (discordId: string) {
+      this.addToSet(this.skipping, discordId)
+      this.removeFromSet(this.attending, discordId)
     }
 
-    time_until_start(): number {
-        return this.start_time.getTime() - new Date().getTime();
+    timeUntilStart (): number {
+      return this.startTime.getTime() - new Date().getTime()
     }
 
-    private add_to_set(set: string[], item: string) {
-        if (!set.includes(item)) {
-            set.push(item);
-        }
+    private addToSet (set: string[], item: string) {
+      if (!set.includes(item)) {
+        set.push(item)
+      }
     }
 
-    private remove_from_set(set: string[], item: string) {
-	const copy = set.filter(s => s !== item);
-	set.length = 0;
-	copy.map(s => set.push(s));
+    private removeFromSet (set: string[], item: string) {
+      const copy = set.filter(s => s !== item)
+      set.length = 0
+      copy.map(s => set.push(s))
     }
 }

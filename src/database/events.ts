@@ -1,40 +1,59 @@
-import DiscordEvent from '../data/discord-event';
+import DiscordEvent from '../data/discord-event'
+import fs from 'fs'
+import {classToPlain, plainToClass} from 'class-transformer';
 
 export default class EventsDatabase {
     events: DiscordEvent[];
 
-    constructor() {
-        this.events = [];
+    constructor () {
+      this.events = []
     }
 
-    getEvent(event_id: string): DiscordEvent | null {
-        const index = this.events.findIndex(e => e.id == event_id);
-        if (index !== -1) {
-            return this.events[index];
-        }
-        return null;
+    load () {
+      const data = fs.readFileSync('./build/db/events.json').toString()
+      JSON.parse(data).forEach((element: Object) => {
+        this.upsertEvent(plainToClass(DiscordEvent, element));
+      })
     }
 
-    getEvents(): DiscordEvent[] {
-        return this.events;
+    save () {
+      fs.writeFileSync('./build/db/events.json', JSON.stringify(classToPlain(this.events)));
     }
 
-    upsertEvent(event: DiscordEvent) {
-        const index = this.events.findIndex(e => e.id == event.id);
-        if (index !== -1) {
-            this.events[index] = event;
-        } else {
-            this.events.push(event);
-        }
+    getEvent (eventId: string): DiscordEvent | null {
+      const index = this.events.findIndex(e => e.id === eventId)
+      if (index !== -1) {
+        return this.events[index]
+      }
+      return null
     }
 
-    removeEvent(event_id: string): DiscordEvent | null {
-        const index = this.events.findIndex(e => e.id == event_id);
-        if (index === -1) {
-            return null;
-        }
-	const out = this.events[index];
-	this.events.splice(index, 1);
-	return out;
+    getEvents (): DiscordEvent[] {
+      return this.events
+    }
+
+    upsertEvent (event: DiscordEvent) {
+      const index = this.events.findIndex(e => e.id === event.id)
+      if (index !== -1) {
+        this.events[index] = event
+      } else {
+        this.events.push(event)
+      }
+      this.save()
+    }
+
+    removeEvent (eventId: string): DiscordEvent | null {
+      const index = this.events.findIndex(e => e.id === eventId)
+      if (index === -1) {
+        return null
+      }
+      const out = this.events[index]
+      this.events.splice(index, 1)
+      this.save()
+      return out
+    }
+
+    getNextEventID (): string {
+      return this.events.length.toString()
     }
 }

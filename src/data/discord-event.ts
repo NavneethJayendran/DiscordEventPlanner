@@ -8,6 +8,7 @@ export default class DiscordEvent {
     description: string;
     @Type(() => Date)
     startTime: Date;
+    invited: string[];
     attending: string[];
     skipping: string[];
     channelId: string;
@@ -17,20 +18,33 @@ export default class DiscordEvent {
       this.name = name
       this.description = description
       this.creatorId = creatorId
+      this.invited = []
       this.attending = [creatorId]
       this.skipping = []
       this.startTime = startTime
       this.channelId = channelId
     }
 
+    addInvitedIfNotAlready (discordId: string) {
+      if ([this.invited, this.skipping, this.attending].some(list => list.includes(discordId))) {
+          return false;
+      }
+      this.addToSet(this.invited, discordId)
+      this.removeFromSet(this.attending, discordId)
+      this.removeFromSet(this.skipping, discordId)
+      return true;
+    }
+
     addAttendee (discordId: string) {
       this.addToSet(this.attending, discordId)
       this.removeFromSet(this.skipping, discordId)
+      this.removeFromSet(this.invited, discordId)
     }
 
-    removeAttendee (discordId: string) {
+    addSkipper (discordId: string) {
       this.addToSet(this.skipping, discordId)
       this.removeFromSet(this.attending, discordId)
+      this.removeFromSet(this.invited, discordId)
     }
 
     timeUntilStart (): number {

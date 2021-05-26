@@ -1,0 +1,9 @@
+{
+  "watch": [
+    "build"
+  ],
+  "ignore": [
+    "build/db"
+  ],
+  "delay": 2.5
+}

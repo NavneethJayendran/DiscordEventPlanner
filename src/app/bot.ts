@@ -7,32 +7,44 @@ import {
   CommandMessage
 } from '@typeit/discord'
 import { ArgumentParser } from 'argparse';
-import { TextChannel } from 'discord.js';
+import { TextChannel, User } from 'discord.js';
 import EventsDatabase from '../database/events';
 import DiscordEvent from '../data/discord-event';
 import * as chrono from 'chrono-node';
-import shellquote from 'shell-quote';
+import {parse as argvparse} from '../parse/shell-quote';
 import humanizeDuration from 'humanize-duration';
-
-const eventScheduleParser = new ArgumentParser({
-  prog: '!event schedule',
-  description: 'Schedule some upcoming events',
-  add_help: true,
-  exit_on_error: false,
-});
-
-eventScheduleParser.add_argument('--description', { help: 'Event description', 'default': "" });
-eventScheduleParser.add_argument('event_name', { help: 'Name of the event' });
-eventScheduleParser.add_argument('when', { help: 'Time the event starts' });
 
 @Discord('!')
 /* eslint-disable no-unused-vars */
 abstract class AppDiscord {
 /* eslint-enable no-unused-vars */
     eventsDB: EventsDatabase
+    scheduleParser: ArgumentParser
+    inviteParser: ArgumentParser
     constructor () {
       this.eventsDB = new EventsDatabase()
       this.eventsDB.load()
+
+      this.scheduleParser = new ArgumentParser({
+          prog: '!event schedule',
+          description: 'Schedule some upcoming events',
+          add_help: true,
+          exit_on_error: false,
+      });
+
+      this.scheduleParser.add_argument('-d', '--description', { help: 'Event description', 'default': "" });
+      this.scheduleParser.add_argument('event_name', { help: 'Name of the event' });
+      this.scheduleParser.add_argument('when', { help: 'Time the event starts' });
+
+      this.inviteParser = new ArgumentParser({
+          prog: '!event invite',
+          description: 'Schedule some upcoming events',
+          add_help: true,
+          exit_on_error: false,
+      });
+
+      this.inviteParser.add_argument('event_id', { help: 'Name of the event' });
+      this.inviteParser.add_argument('person', { nargs: '+', help: 'Time the event starts' });
     }
 
     @On('ready')
@@ -41,7 +53,7 @@ abstract class AppDiscord {
       client: Client
     ) {
       for (const event of this.eventsDB.getEvents()) {
-	this.scheduleEvent(event, client)
+          this.scheduleEvent(client, event)
       }
     }
 
@@ -58,26 +70,17 @@ abstract class AppDiscord {
     async onSchedule (msg: CommandMessage, client: Client) {
       let args: any;
       try {
-	  let argv: string[] = [];
-	  for (const entry of shellquote.parse(msg.commandContent)) {
-	      if (entry === 'event' || entry === 'schedule') {
-		continue;
-	      }
-	      if (typeof entry === 'string' || entry instanceof String)  {
-	      	argv.push(entry as string);
-	      }
-	  }
-	  console.log(argv);
-          args = eventScheduleParser.parse_args(argv);
+          let argv: string[] = argvparse(msg.content);
+          (argv);
+          args = this.scheduleParser.parse_args(argv.splice(2));
       } catch (err) {
-	  console.log("In error block");
-	  msg.reply(err.message);
-	  return;
+          msg.reply(err.message);
+          return;
       }
       const timestamp = chrono.parseDate(args.when);
       if (timestamp === null) {
-	  msg.reply(`Sorry, I don't understand when "${args.when}" is.`);
-	  return;
+          msg.reply(`Sorry, I don't understand when "${args.when}" is.`);
+          return;
       }
       const event = new DiscordEvent(
         this.eventsDB.getNextEventID(),
@@ -94,8 +97,13 @@ abstract class AppDiscord {
         return;
       }
       this.eventsDB.upsertEvent(event);
-      this.scheduleEvent(event, client)
-      msg.channel.send(`Scheduled event #${event.id} **${event.name}** _${humanizeDuration(duration)}_ from now`);
+      this.scheduleEvent(client, event)
+      const messageLines: string[]= [
+          `Scheduled (#${event.id}) **${event.name}** _${humanizeDuration(duration)}_ from now`,
+	  (await this.getCreatedByLine(client, event)),
+	  ...this.getDescriptionLines(event)
+      ]
+      msg.channel.send(messageLines.join('\n'));
     }
 
     @Command('event show :eventId')
@@ -106,10 +114,11 @@ abstract class AppDiscord {
         return;
       }
       const duration = event.timeUntilStart();
-      const messageLines = [
-	      `**${event.name}** is happening _${humanizeDuration(duration)}_ from now`,
-	      ...this.getDescriptionLines(event),
-	      ...(await this.getAttendanceLines(event, client)),
+      const messageLines: string[] = [
+              `**(#${event.id}) ${event.name}** is happening _${humanizeDuration(duration)}_ from now`,
+	      (await this.getCreatedByLine(client, event)),
+              ...this.getDescriptionLines(event),
+              ...(await this.getAttendanceLines(event, client)),
       ]
       msg.channel.send(messageLines.join('\n'))
     }
@@ -125,10 +134,10 @@ abstract class AppDiscord {
       this.eventsDB.upsertEvent(event);
       const duration = event.timeUntilStart();
       const messageLines = [
-	      `Attending **${event.name}** starting _${humanizeDuration(duration)}_ from now`,
+              `Attending (#${event.id}) **${event.name}** starting _${humanizeDuration(duration)}_ from now`,
               ...(await this.getAttendanceLines(event, client))
       ];
-      msg.reply(messageLines.join('\n'));
+      msg.channel.send(messageLines.join('\n'));
     }
 
     @Command('event skip :eventId')
@@ -138,60 +147,114 @@ abstract class AppDiscord {
         msg.channel.send("Sorry, I couldn't find that event.")
         return
       }
-      event.removeAttendee(msg.author.id);
+      event.addSkipper(msg.author.id);
       this.eventsDB.upsertEvent(event);
-      const minutes = event.timeUntilStart() / (60 ** 1000);
+      const duration = event.timeUntilStart();
       const messageLines = [
-	      `Skipping **${event.name}** starting _${minutes}_ minutes from now`,
-	      ...(await this.getAttendanceLines(event, client))
+              `Skipping (#${event.id}) **${event.name}** starting _${humanizeDuration(duration)}_ from now`,
+              ...(await this.getAttendanceLines(event, client))
       ]
       msg.reply(messageLines.join('\n'));
+    }
+
+    @Command('event invite')
+    async onInviteUsers (msg: CommandMessage, client: Client) {
+      let args: any;
+      try {
+          let argv: string[] = argvparse(msg.content);
+          args = this.inviteParser.parse_args(argv.splice(2));
+      } catch (err) {
+          msg.reply(err.message);
+          return;
+      }
+      const event = this.eventsDB.getEvent(String(args.event_id))
+      if (event === null) {
+        msg.reply("Sorry, I couldn't find that event.")
+        return
+      }
+      let userColumns: string[] = [];
+      for (const [_, user] of msg.mentions.users) {
+	  if (user && event.addInvitedIfNotAlready(user.id)) {
+		 userColumns.push(user.toString());
+	  }
+      }
+      this.eventsDB.upsertEvent(event);
+      const duration = event.timeUntilStart();
+      let messageLines: string[] = [];
+      if (userColumns.length > 0) { 
+          messageLines = [
+              `Invited ${userColumns.join(",")} to (#${event.id}) **${event.name}** starting _${humanizeDuration(duration)}_ from now`,
+              ...(await this.getAttendanceLines(event, client))
+          ];
+      } else {
+          messageLines = [
+              `All users were already invited to (#${event.id}) **${event.name}** starting _${humanizeDuration(duration)}_ from now`,
+              ...(await this.getAttendanceLines(event, client))
+          ];
+      }
+      msg.channel.send(messageLines.join('\n'));
     }
 
     private async getAttendanceLines(event: DiscordEvent, client: Client): Promise<string[]> {
       const out = [];
       if (event.attending.length + event.skipping.length) {
-        out.push('Attendance:')
+        out.push('Attendance:');
         for (const memberId of event.attending) {
-          const user = await client.users.fetch(memberId, true)
-          out.push(`  - **${user.username}**`)
+          out.push(`  - **${await this.getUserName(client, memberId)}** :white_check_mark:`)
         }
+        for (const memberId of event.invited) {
+          out.push(`  - **${await this.getUserName(client, memberId)}** :question:`)
+	}
         for (const memberId of event.skipping) {
-          const user = await client.users.fetch(memberId, true)
-          out.push(`  - ~~${user.username}~~`)
+          out.push(`  - ~~${await this.getUserName(client, memberId)}~~ :x:`)
         }
       }
       return out;
     }
 
-    private async scheduleEvent(event: DiscordEvent, client: Client): Promise<undefined> {
-	if (event.timeUntilStart() < 0) {
-	    console.log("Couldn't schedule event happening in the past");
+    private async scheduleEvent(client: Client, event: DiscordEvent): Promise<undefined> {
+        if (event.timeUntilStart() < 0) {
             this.eventsDB.removeEvent(event.id)
-	    return;
-	}
+            return;
+        }
         client.setTimeout(async () => {
            this.eventsDB.removeEvent(event.id)
-           const channel = await client.channels.fetch(event.channelId, true)
+           const channel = client.channels.cache.get(event.channelId)
            if (channel) {
-	       const messageLines = [
-	      	    `**${event.name}** is starting now!`,
-		    ...this.getDescriptionLines(event),
-	       ]
-	       for (const attending of event.attending) {
-		    const user = await client.users.fetch(attending, true);
-		    messageLines.push(user.toString());
-	       }
+               const messageLines = [
+                    `(#${event.id}) **${event.name}** is starting now!`,
+                    ...this.getDescriptionLines(event),
+               ]
+               for (const attending of event.attending) {
+                    messageLines.push((await this.getOrFetchUser(client, attending)).toString())
+               }
                await (channel as TextChannel).send(messageLines.join('\n'));
            }
         }, event.timeUntilStart());
     }
 
+    private async getCreatedByLine(client: Client, event: DiscordEvent): Promise<string> {
+        return `Created by: _${(await this.getUserName(client, event.creatorId))}_`;
+    }
+
     private getDescriptionLines(event: DiscordEvent): string[] {
-      const out = [];
-      if (event.description) {
-	out.push(`Description: _${event.description}_`);
+	if (event.description) {
+            return [`Description: _${event.description}_`];
+	}
+	return [];
+    }
+
+    private async getUserName(client: Client, userId: string): Promise<string> {
+        const user = await this.getOrFetchUser(client, userId);
+	return user.username;
+    }
+
+    private async getOrFetchUser(client: Client, userID: string): Promise<User> {
+      const user = client.users.cache.get(userID);
+      if (user) {
+	return Promise.resolve(user);
+      } else {
+        return client.users.fetch(userID);
       }
-      return out;
     }
 }

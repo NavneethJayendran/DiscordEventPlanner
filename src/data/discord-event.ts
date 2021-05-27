@@ -1,5 +1,4 @@
-import { Type } from 'class-transformer';
-
+import { Type } from 'class-transformer'
 
 export default class DiscordEvent {
     id: string;
@@ -8,6 +7,7 @@ export default class DiscordEvent {
     description: string;
     @Type(() => Date)
     startTime: Date;
+
     invited: string[];
     attending: string[];
     skipping: string[];
@@ -27,12 +27,12 @@ export default class DiscordEvent {
 
     addInvitedIfNotAlready (discordId: string) {
       if ([this.invited, this.skipping, this.attending].some(list => list.includes(discordId))) {
-          return false;
+        return false
       }
       this.addToSet(this.invited, discordId)
       this.removeFromSet(this.attending, discordId)
       this.removeFromSet(this.skipping, discordId)
-      return true;
+      return true
     }
 
     addAttendee (discordId: string) {

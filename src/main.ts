@@ -1,6 +1,6 @@
 import { Client } from '@typeit/discord'
 import { config as envConfig } from 'dotenv'
-import 'reflect-metadata';
+import 'reflect-metadata'
 
 envConfig({ debug: true, path: `${__dirname}/.env` })
 

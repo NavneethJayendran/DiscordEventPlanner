@@ -9,6 +9,7 @@
     "@typeit/discord": "^4.0.10",
     "@types/argparse": "^2.0.8",
     "@types/humanize-duration": "^3.25.0",
+    "@types/lodash.groupby": "^4.6.6",
     "@types/node": "^15.6.0",
     "@types/shell-quote": "^1.7.0",
     "@types/uuid": "^8.3.0",
@@ -18,6 +19,9 @@
     "discord.js": "^12.5.3",
     "dotenv": "^10.0.0",
     "humanize-duration": "^3.26.0",
+    "lodash.groupby": "^4.6.0",
+    "moment": "^2.29.1",
+    "moment-timezone": "^0.5.33",
     "reflect-metadata": "^0.1.13",
     "ts-node": "^10.0.0",
     "typescript": "^4.2.4"

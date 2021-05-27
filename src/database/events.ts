@@ -1,6 +1,6 @@
 import DiscordEvent from '../data/discord-event'
 import fs from 'fs'
-import {classToPlain, plainToClass} from 'class-transformer';
+import { classToPlain, plainToClass } from 'class-transformer'
 
 export default class EventsDatabase {
     events: DiscordEvent[];
@@ -12,12 +12,12 @@ export default class EventsDatabase {
     load () {
       const data = fs.readFileSync('./build/db/events.json').toString()
       JSON.parse(data).forEach((element: Object) => {
-        this.upsertEvent(plainToClass(DiscordEvent, element));
+        this.upsertEvent(plainToClass(DiscordEvent, element))
       })
     }
 
     save () {
-      fs.writeFileSync('./build/db/events.json', JSON.stringify(classToPlain(this.events)));
+      fs.writeFileSync('./build/db/events.json', JSON.stringify(classToPlain(this.events)))
     }
 
     getEvent (eventId: string): DiscordEvent | null {

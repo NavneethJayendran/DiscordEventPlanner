@@ -1,9 +1,5 @@
 {
-  "watch": [
-    "build"
-  ],
-  "ignore": [
-    "build/db"
-  ],
+  "watch": ["build"],
+  "ignore": ["build/db"],
   "delay": 2.5
 }

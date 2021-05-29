@@ -1,4 +1,5 @@
 import { Type } from "class-transformer";
+import moment from "moment";
 
 export default class DiscordEvent {
   id: string;
@@ -7,6 +8,8 @@ export default class DiscordEvent {
   description: string;
   @Type(() => Date)
   startTime: Date;
+  @Type(() => Date)
+  endTime: Date;
 
   invited: string[];
   attending: string[];
@@ -29,6 +32,7 @@ export default class DiscordEvent {
     this.attending = [creatorId];
     this.skipping = [];
     this.startTime = startTime;
+    this.endTime = moment(startTime).add(5, "m").toDate();
     this.channelId = channelId;
   }
 
@@ -60,6 +64,13 @@ export default class DiscordEvent {
 
   timeUntilStart(): number {
     return this.startTime.getTime() - new Date().getTime();
+  }
+
+  timeUntilEnd(): number {
+    if (!this.endTime) {
+      return 0;
+    }
+    return this.endTime.getTime() - new Date().getTime();
   }
 
   private addToSet(set: string[], item: string) {

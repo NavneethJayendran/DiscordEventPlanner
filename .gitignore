@@ -3,3 +3,4 @@
 build
 dist
 db/events.json
+.local

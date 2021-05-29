@@ -7,7 +7,7 @@ import {
   CommandMessage,
 } from "@typeit/discord";
 import { ArgumentParser } from "argparse";
-import { TextChannel, User } from "discord.js";
+import { GuildMember, TextChannel, User } from "discord.js";
 import EventsDatabase from "../database/events";
 import DiscordEvent from "../data/discord-event";
 import * as chrono from "chrono-node";
@@ -16,7 +16,14 @@ import humanizeDuration from "humanize-duration";
 import moment from "moment-timezone";
 import groupBy from "lodash.groupby";
 
-@Discord("!")
+const getPrefix = (): string => {
+  if (process.env.ENV === "production") {
+    return "!";
+  }
+  return "!!";
+};
+
+@Discord(getPrefix)
 /* eslint-disable no-unused-vars */
 abstract class AppDiscord {
   /* eslint-enable no-unused-vars */
@@ -43,7 +50,7 @@ abstract class AppDiscord {
     });
     this.scheduleParser.add_argument("when", { help: "Time the event starts" });
     this.scheduleParser.add_argument("mention", {
-      nargs: "+",
+      nargs: "*",
       help: "Mention people to invite",
     });
 
@@ -56,7 +63,7 @@ abstract class AppDiscord {
 
     this.inviteParser.add_argument("event_id", { help: "Name of the event" });
     this.inviteParser.add_argument("mention", {
-      nargs: "+",
+      nargs: "*",
       help: "Mention people to invite",
     });
   }
@@ -69,9 +76,13 @@ abstract class AppDiscord {
   }
 
   @On("message")
-  onMessage([msg]: ArgsOf<"message">) {
-    if (msg.content === "ping") {
-      msg.reply("pong " + msg.author.username);
+  onMessage([msg]: ArgsOf<"message">, client: Client) {
+    let from = "";
+    if (process.env.ENV !== "production") {
+      from = " from " + process.env.ENV ?? "dev";
+    }
+    if (msg.mentions.members?.some(({ user }) => user.id == client.user?.id)) {
+      msg.reply(`${":heartbeat:"}${from}`);
     }
   }
 
@@ -104,17 +115,18 @@ abstract class AppDiscord {
       msg.channel.send("I can't schedule an event in the past!");
       return;
     }
-    for (const [_, user] of msg.mentions.users) {
+    for (const [_, user] of msg.mentions.members || []) {
       user && event.addInvitedIfNotAlready(user.id);
     }
     this.eventsDB.upsertEvent(event);
     this.scheduleEvent(client, event);
     const messageLines: string[] = [
-      `Scheduled (#${event.id}) **${event.name}** _${humanizeDuration(
-        duration
-      )}_ from now`,
-      await this.getCreatedByLine(client, event),
+      `Scheduled (#${event.id}) **${
+        event.name
+      }** ${this.getStartTimeDescriptionAdjective(event)}`,
+      await this.getCreatedByLine(client, event, msg.guild?.id),
       ...this.getDescriptionLines(event),
+      ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
     ];
     msg.channel.send(messageLines.join("\n"));
   }
@@ -134,12 +146,13 @@ abstract class AppDiscord {
     );
     const messageLines: string[] = ["**Events:\n**"];
     Object.entries(groupedEvents).forEach(([day, events]) => {
+      const fmt = (v: Date) => moment(v).tz(tz).format("h:mm a");
       messageLines.push(day + "\n");
       events.forEach((event) => {
         messageLines.push(
-          `  (#${event.id}) **${event.name}** at ${moment(
+          `  (#${event.id}) **${event.name}** from ${fmt(
             event.startTime
-          ).format("h:mm a")}`
+          )} to ${fmt(event.endTime)}`
         );
       });
       messageLines.push("\n");
@@ -157,14 +170,11 @@ abstract class AppDiscord {
       msg.channel.send("Sorry, I couldn't find that event.");
       return;
     }
-    const duration = event.timeUntilStart();
     const messageLines: string[] = [
-      `**(#${event.id}) ${event.name}** is starting _${humanizeDuration(
-        duration
-      )}_ from now`,
-      await this.getCreatedByLine(client, event),
+      `**(#${event.id}) ${event.name}** ${this.getStartTimeDescription(event)}`,
+      await this.getCreatedByLine(client, event, msg.guild?.id),
       ...this.getDescriptionLines(event),
-      ...(await this.getAttendanceLines(event, client)),
+      ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
     ];
     msg.channel.send(messageLines.join("\n"));
   }
@@ -178,12 +188,11 @@ abstract class AppDiscord {
     }
     event.addAttendee(msg.author.id);
     this.eventsDB.upsertEvent(event);
-    const duration = event.timeUntilStart();
     const messageLines = [
-      `Attending (#${event.id}) **${event.name}** starting _${humanizeDuration(
-        duration
-      )}_ from now`,
-      ...(await this.getAttendanceLines(event, client)),
+      `Attending (#${event.id}) **${
+        event.name
+      }** ${this.getStartTimeDescriptionAdjective(event)}`,
+      ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
     ];
     msg.channel.send(messageLines.join("\n"));
   }
@@ -197,12 +206,11 @@ abstract class AppDiscord {
     }
     event.addSkipper(msg.author.id);
     this.eventsDB.upsertEvent(event);
-    const duration = event.timeUntilStart();
     const messageLines = [
-      `Skipping (#${event.id}) **${event.name}** starting _${humanizeDuration(
-        duration
-      )}_ from now`,
-      ...(await this.getAttendanceLines(event, client)),
+      `Skipping (#${event.id}) **${
+        event.name
+      }** ${this.getStartTimeDescriptionAdjective(event)}`,
+      ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
     ];
     msg.reply(messageLines.join("\n"));
   }
@@ -235,42 +243,54 @@ abstract class AppDiscord {
       messageLines = [
         `Invited ${userColumns.join(",")} to (#${event.id}) **${
           event.name
-        }** starting _${humanizeDuration(duration)}_ from now`,
-        ...(await this.getAttendanceLines(event, client)),
+        }** ${this.getStartTimeDescriptionAdjective(event)}`,
+        ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
       ];
     } else {
       messageLines = [
         `All users were already invited to (#${event.id}) **${
           event.name
-        }** starting _${humanizeDuration(duration)}_ from now`,
-        ...(await this.getAttendanceLines(event, client)),
+        }** ${this.getStartTimeDescriptionAdjective(event)}`,
+        ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
       ];
     }
     msg.channel.send(messageLines.join("\n"));
   }
 
   private async getAttendanceLines(
+    client: Client,
     event: DiscordEvent,
-    client: Client
+    guildId: string | undefined
   ): Promise<string[]> {
     const out = [];
     if (event.attending.length + event.skipping.length) {
       out.push("Attendance:");
       for (const memberId of event.attending) {
         out.push(
-          `  - **${await this.getUserName(
+          `  - **${await this.getUserPreferredName(
             client,
+            guildId,
             memberId
           )}** :white_check_mark:`
         );
       }
       for (const memberId of event.invited) {
         out.push(
-          `  - **${await this.getUserName(client, memberId)}** :question:`
+          `  - **${await this.getUserPreferredName(
+            client,
+            guildId,
+            memberId
+          )}** :question:`
         );
       }
       for (const memberId of event.skipping) {
-        out.push(`  - ~~${await this.getUserName(client, memberId)}~~ :x:`);
+        out.push(
+          `  - ~~${await this.getUserPreferredName(
+            client,
+            guildId,
+            memberId
+          )}~~ :x:`
+        );
       }
     }
     return out;
@@ -280,33 +300,48 @@ abstract class AppDiscord {
     client: Client,
     event: DiscordEvent
   ): Promise<undefined> {
-    if (event.timeUntilStart() < 0) {
-      this.eventsDB.removeEvent(event.id);
-      return;
+    if (event.timeUntilStart() > 0) {
+      client.setTimeout(async () => {
+        console.log(event.timeUntilEnd());
+        const channel = client.channels.cache.get(event.channelId);
+        if (channel) {
+          const messageLines = [
+            `(#${event.id}) **${event.name}** is starting now!`,
+            ...this.getDescriptionLines(event),
+          ];
+          for (const attending of event.attending) {
+            messageLines.push(
+              (await this.getOrFetchUser(client, attending)).toString()
+            );
+          }
+          await (channel as TextChannel).send(messageLines.join("\n"));
+        }
+      }, event.timeUntilStart());
     }
+
     client.setTimeout(async () => {
+      console.log("Now removing event");
       this.eventsDB.removeEvent(event.id);
       const channel = client.channels.cache.get(event.channelId);
       if (channel) {
-        const messageLines = [
-          `(#${event.id}) **${event.name}** is starting now!`,
-          ...this.getDescriptionLines(event),
-        ];
-        for (const attending of event.attending) {
-          messageLines.push(
-            (await this.getOrFetchUser(client, attending)).toString()
-          );
-        }
-        await (channel as TextChannel).send(messageLines.join("\n"));
+        await (channel as TextChannel).send(
+          `#(${event.id}) **${event.name}** just ended.`
+        );
       }
-    }, event.timeUntilStart());
+    }, event.timeUntilEnd());
+    return;
   }
 
   private async getCreatedByLine(
     client: Client,
-    event: DiscordEvent
+    event: DiscordEvent,
+    guildId: string | undefined
   ): Promise<string> {
-    return `Created by: _${await this.getUserName(client, event.creatorId)}_`;
+    return `Created by: _${await this.getUserPreferredName(
+      client,
+      guildId,
+      event.creatorId
+    )}_`;
   }
 
   private getDescriptionLines(event: DiscordEvent): string[] {
@@ -316,9 +351,37 @@ abstract class AppDiscord {
     return [];
   }
 
-  private async getUserName(client: Client, userId: string): Promise<string> {
-    const user = await this.getOrFetchUser(client, userId);
-    return user.username;
+  private async getUserPreferredName(
+    client: Client,
+    guildId: string | undefined,
+    userId: string
+  ): Promise<string> {
+    if (guildId) {
+      try {
+        return (await this.getOrFetchMember(client, guildId, userId)).user
+          .username;
+      } catch (err) {
+        console.log(err);
+      }
+    }
+    return (await this.getOrFetchUser(client, userId)).username;
+  }
+
+  private async getOrFetchMember(
+    client: Client,
+    guildID: string,
+    userID: string
+  ): Promise<GuildMember> {
+    let guild = client.guilds.cache.get(guildID);
+    if (!guild) {
+      guild = await client.guilds.fetch(guildID);
+    }
+    let member = guild.members.cache.get(userID);
+    if (member) {
+      return member;
+    } else {
+      return guild.members.fetch(userID);
+    }
   }
 
   private async getOrFetchUser(client: Client, userID: string): Promise<User> {
@@ -327,6 +390,28 @@ abstract class AppDiscord {
       return Promise.resolve(user);
     } else {
       return client.users.fetch(userID);
+    }
+  }
+
+  private getStartTimeDescription(event: DiscordEvent): string {
+    const duration = event.timeUntilStart();
+    if (duration > 0) {
+      return `starts **${humanizeDuration(duration)}** from now`;
+    } else if (duration < 0) {
+      return `started **${humanizeDuration(duration)}** ago`;
+    } else {
+      return `is starting **now**`;
+    }
+  }
+
+  private getStartTimeDescriptionAdjective(event: DiscordEvent): string {
+    const duration = event.timeUntilStart();
+    if (duration > 0) {
+      return `starting **${humanizeDuration(duration)}** from now`;
+    } else if (duration < 0) {
+      return `which started **${humanizeDuration(duration)}** ago`;
+    } else {
+      return `starting **now**`;
     }
   }
 }

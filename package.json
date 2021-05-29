@@ -24,11 +24,12 @@
     "moment-timezone": "^0.5.33",
     "reflect-metadata": "^0.1.13",
     "ts-node": "^10.0.0",
+    "tslib": "^2.2.0",
     "typescript": "^4.2.4"
   },
   "scripts": {
-    "dbinit:dev": "mkdir -p build/db && (cp -n db/events.json build/db/events.json || true)",
-    "build:dev": "yarn run dbinit:dev && tsc && cp .env build/.env",
+    "dbinit": "mkdir -p build/db && (cp -n db/events.json build/db/events.json || true)",
+    "build": "tsc && yarn run dbinit && cp .env build/.env",
     "start:dev": "yarn build:dev && concurrently --raw --kill-others \"tsc -w\" \"sleep 2.5 && nodemon build/main.js\"",
     "start:prod": "pm2 start build/main.js",
     "clean": "rm -rf build"

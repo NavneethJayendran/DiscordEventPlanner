@@ -1,5 +1,6 @@
 **/node_modules
 .env
+.env.dev
 build
 dist
 db/events.json

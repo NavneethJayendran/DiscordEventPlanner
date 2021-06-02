@@ -1,8 +1,9 @@
 import { Client } from "@typeit/discord";
 import { config as envConfig } from "dotenv";
+import path from "path";
 import "reflect-metadata";
 
-envConfig({ debug: true, path: `${__dirname}/.env` });
+envConfig({ debug: true, path: path.join(__dirname, '.env' )});
 
 export class Main {
   private static _client: Client;
@@ -16,8 +17,8 @@ export class Main {
 
     await this._client.login(
       process.env.TOKEN || "",
-      `${__dirname}/app/*.ts`,
-      `${__dirname}/app/*.js`
+      path.join(__dirname, 'app/*.ts'),
+      path.join(__dirname, 'app/*.js')
     );
 
     console.log(Client.getCommands());

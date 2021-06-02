@@ -6,8 +6,10 @@ export default class DiscordEvent {
   creatorId: string;
   name: string;
   description: string;
+
   @Type(() => Date)
   startTime: Date;
+
   @Type(() => Date)
   endTime: Date;
 
@@ -15,6 +17,7 @@ export default class DiscordEvent {
   attending: string[];
   skipping: string[];
   channelId: string;
+  guildId: string;
 
   constructor(
     id: string,
@@ -22,7 +25,8 @@ export default class DiscordEvent {
     description: string,
     startTime: Date,
     creatorId: string,
-    channelId: string
+    channelId: string,
+    guildId: string
   ) {
     this.id = id;
     this.name = name;
@@ -34,6 +38,7 @@ export default class DiscordEvent {
     this.startTime = startTime;
     this.endTime = moment(startTime).add(5, "m").toDate();
     this.channelId = channelId;
+    this.guildId = guildId;
   }
 
   addInvitedIfNotAlready(discordId: string) {

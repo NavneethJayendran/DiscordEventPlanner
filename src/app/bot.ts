@@ -7,7 +7,13 @@ import {
   CommandMessage,
 } from "@typeit/discord";
 import { ArgumentParser } from "argparse";
-import { GuildMember, TextChannel, User } from "discord.js";
+import {
+  Guild,
+  GuildMember,
+  TextChannel,
+  User,
+  VoiceChannel,
+} from "discord.js";
 import EventsDatabase from "../database/events";
 import DiscordEvent from "../data/discord-event";
 import * as chrono from "chrono-node";
@@ -15,12 +21,14 @@ import { parse as argvparse } from "../parse/shell-quote";
 import humanizeDuration from "humanize-duration";
 import moment from "moment-timezone";
 import groupBy from "lodash.groupby";
+// @ts-ignore
+import discordTTS from "discord-tts";
 
 const getPrefix = (): string => {
   if (process.env.ENV === "production") {
     return "!";
   }
-  return "!!";
+  return "\\?";
 };
 
 @Discord(getPrefix)
@@ -81,7 +89,7 @@ abstract class AppDiscord {
     if (process.env.ENV !== "production") {
       from = " from " + process.env.ENV ?? "dev";
     }
-    if (msg.mentions.members?.some(({ user }) => user.id == client.user?.id)) {
+    if (msg.mentions.members?.some(({ user }) => user.id === client.user?.id)) {
       msg.reply(`${":heartbeat:"}${from}`);
     }
   }
@@ -91,7 +99,6 @@ abstract class AppDiscord {
     let args: any;
     try {
       const argv: string[] = argvparse(msg.content);
-      argv;
       args = this.scheduleParser.parse_args(argv.splice(2));
     } catch (err) {
       msg.reply(err.message);
@@ -108,14 +115,15 @@ abstract class AppDiscord {
       args.description,
       timestamp,
       msg.author.id,
-      msg.channel.id
+      msg.channel.id,
+      msg.guild?.id || ""
     );
     const duration = event.timeUntilStart();
     if (duration < 0) {
       msg.channel.send("I can't schedule an event in the past!");
       return;
     }
-    for (const [_, user] of msg.mentions.members || []) {
+    for (const [, user] of msg.mentions.members || []) {
       user && event.addInvitedIfNotAlready(user.id);
     }
     this.eventsDB.upsertEvent(event);
@@ -231,13 +239,12 @@ abstract class AppDiscord {
       return;
     }
     const userColumns: string[] = [];
-    for (const [_, user] of msg.mentions.users) {
+    for (const [, user] of msg.mentions.users) {
       if (user && event.addInvitedIfNotAlready(user.id)) {
         userColumns.push(user.username);
       }
     }
     this.eventsDB.upsertEvent(event);
-    const duration = event.timeUntilStart();
     let messageLines: string[] = [];
     if (userColumns.length > 0) {
       messageLines = [
@@ -302,7 +309,6 @@ abstract class AppDiscord {
   ): Promise<undefined> {
     if (event.timeUntilStart() > 0) {
       client.setTimeout(async () => {
-        console.log(event.timeUntilEnd());
         const channel = client.channels.cache.get(event.channelId);
         if (channel) {
           const messageLines = [
@@ -315,12 +321,33 @@ abstract class AppDiscord {
             );
           }
           await (channel as TextChannel).send(messageLines.join("\n"));
+          for (const voiceChannel of await this.huntAttendeeVoiceChannels(
+            client,
+            event
+          )) {
+            const connection = await voiceChannel.join();
+            const dispatcher = connection.play(
+              discordTTS.getVoiceStream(
+                `Event planner bot here. ${event.name} is starting now, scrubs!`
+              )
+            );
+            await new Promise((resolve, reject) => {
+              dispatcher.on("finish", () => {
+                voiceChannel.leave();
+                resolve(undefined);
+              });
+              dispatcher.on("error", (err) => {
+                console.log("Error playing audio", err);
+                voiceChannel.leave();
+                reject(err);
+              });
+            });
+          }
         }
       }, event.timeUntilStart());
     }
 
     client.setTimeout(async () => {
-      console.log("Now removing event");
       this.eventsDB.removeEvent(event.id);
       const channel = client.channels.cache.get(event.channelId);
       if (channel) {
@@ -329,7 +356,36 @@ abstract class AppDiscord {
         );
       }
     }, event.timeUntilEnd());
-    return;
+    return undefined;
+  }
+
+  // Find a set of voice channels that contains as many attendees as possible
+  private async huntAttendeeVoiceChannels(
+    client: Client,
+    event: DiscordEvent
+  ): Promise<VoiceChannel[]> {
+    const channels: VoiceChannel[] = [];
+    const guild = await this.getOrFetchGuild(client, event.guildId);
+    if (!guild) {
+      console.log("Guild not found");
+      return channels;
+    }
+    const memberSet: Set<string> = new Set();
+    event.attending.forEach((memberId) => memberSet.add(memberId));
+    for (const [, channel] of guild.channels.cache) {
+      if (!memberSet.size) {
+        break;
+      }
+      if (channel.type === "voice") {
+        for (const [memberId] of channel.members) {
+          if (memberSet.has(memberId)) {
+            channels.push(channel as VoiceChannel);
+            memberSet.delete(memberId);
+          }
+        }
+      }
+    }
+    return channels;
   }
 
   private async getCreatedByLine(
@@ -367,21 +423,28 @@ abstract class AppDiscord {
     return (await this.getOrFetchUser(client, userId)).username;
   }
 
+  private async getOrFetchGuild(
+    client: Client,
+    guildID: string
+  ): Promise<Guild> {
+    let guild = client.guilds.cache.get(guildID);
+    if (!guild) {
+      guild = await client.guilds.fetch(guildID);
+    }
+    return guild;
+  }
+
   private async getOrFetchMember(
     client: Client,
     guildID: string,
     userID: string
   ): Promise<GuildMember> {
-    let guild = client.guilds.cache.get(guildID);
-    if (!guild) {
-      guild = await client.guilds.fetch(guildID);
-    }
+    const guild = await this.getOrFetchGuild(client, guildID);
     let member = guild.members.cache.get(userID);
-    if (member) {
-      return member;
-    } else {
-      return guild.members.fetch(userID);
+    if (!member) {
+      member = await guild.members.fetch(userID);
     }
+    return member;
   }
 
   private async getOrFetchUser(client: Client, userID: string): Promise<User> {

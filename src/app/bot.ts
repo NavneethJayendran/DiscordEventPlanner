@@ -123,7 +123,7 @@ abstract class AppDiscord {
     const messageLines: string[] = [
       `Scheduled (#${event.id}) **${
         event.name
-      }** ${this.getStartTimeDescriptionAdjective(event)}`,
+      }** ${this.describeStartTimeAdjective(event)}`,
       await this.getCreatedByLine(client, event, msg.guild?.id),
       ...this.getDescriptionLines(event),
       ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
@@ -171,7 +171,7 @@ abstract class AppDiscord {
       return;
     }
     const messageLines: string[] = [
-      `**(#${event.id}) ${event.name}** ${this.getStartTimeDescription(event)}`,
+      `**(#${event.id}) ${event.name}** ${this.describeStartTime(event)}`,
       await this.getCreatedByLine(client, event, msg.guild?.id),
       ...this.getDescriptionLines(event),
       ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
@@ -191,7 +191,7 @@ abstract class AppDiscord {
     const messageLines = [
       `Attending (#${event.id}) **${
         event.name
-      }** ${this.getStartTimeDescriptionAdjective(event)}`,
+      }** ${this.describeStartTimeAdjective(event)}`,
       ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
     ];
     msg.channel.send(messageLines.join("\n"));
@@ -209,7 +209,7 @@ abstract class AppDiscord {
     const messageLines = [
       `Skipping (#${event.id}) **${
         event.name
-      }** ${this.getStartTimeDescriptionAdjective(event)}`,
+      }** ${this.describeStartTimeAdjective(event)}`,
       ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
     ];
     msg.reply(messageLines.join("\n"));
@@ -243,14 +243,14 @@ abstract class AppDiscord {
       messageLines = [
         `Invited ${userColumns.join(",")} to (#${event.id}) **${
           event.name
-        }** ${this.getStartTimeDescriptionAdjective(event)}`,
+        }** ${this.describeStartTimeAdjective(event)}`,
         ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
       ];
     } else {
       messageLines = [
         `All users were already invited to (#${event.id}) **${
           event.name
-        }** ${this.getStartTimeDescriptionAdjective(event)}`,
+        }** ${this.describeStartTimeAdjective(event)}`,
         ...(await this.getAttendanceLines(client, event, msg.guild?.id)),
       ];
     }
@@ -393,7 +393,7 @@ abstract class AppDiscord {
     }
   }
 
-  private getStartTimeDescription(event: DiscordEvent): string {
+  private describeStartTime(event: DiscordEvent): string {
     const duration = event.timeUntilStart();
     if (duration > 0) {
       return `starts **${humanizeDuration(duration)}** from now`;
@@ -404,7 +404,7 @@ abstract class AppDiscord {
     }
   }
 
-  private getStartTimeDescriptionAdjective(event: DiscordEvent): string {
+  private describeStartTimeAdjective(event: DiscordEvent): string {
     const duration = event.timeUntilStart();
     if (duration > 0) {
       return `starting **${humanizeDuration(duration)}** from now`;
